@@ -1,0 +1,42 @@
+﻿Coral_ID,Block,Treatment,Crab,Nutrients,Height_cm,Longest_length_cm,Perpendicular_to_longest_length_cm,Circumference_cm,Notes_measurements,Crab_container,F_carapace_cm,M_carapace_cm,F_gravid,Claw_missing_on_one_crab,Notes_crab
+1,1,Control,N,N,14,26,22,65,"Taken on July 26, 2021 (Kaela was dive buddy--scrubbed tags)",NA,NA,NA,NA,NA,
+2,1,Crab,Y,N,16,22,20,66,,11,1.2,1.3,Y,N,
+3,1,Nutrient,N,Y,22,29,20,75,,NA,NA,NA,NA,NA,
+4,1,Both,Y,Y,17,29,19,69,,16,1,0.9,Y,Y,
+5,2,Control,N,N,15,26,26,68,,NA,NA,NA,NA,NA,
+6,2,Nutrient,N,Y,15,30,21,77,,NA,NA,NA,NA,NA,
+7,2,Crab,Y,N,20,29,22,77,,9,1.1,1.1,Y,N,
+8,2,Both,Y,Y,15,21,20,57,,13,0.9,0.9,N,N,Small crabs
+9_unbroken,3,Crab,Y,N,14,23,20,57,"This was the coral that got broken during the last round of sampling (after all surveys, microbes, etc.).",21,1.1,1,Y,N,
+9_broken,3,Crab,Y,N,14,20,16,47,This is the current size as of the last round of nub sampling,21,1.1,1,Y,N,
+10,3,Both,Y,Y,13,26,19,64,,7,1,1.1,N,N,
+11,3,Nutrient,N,Y,19,30,19,67,,NA,NA,NA,NA,NA,
+12,3,Control,N,N,18,31,21,73,,NA,NA,NA,NA,NA,
+13,4,Both,Y,Y,16,37,20,79,,1,1.2,1.1,Y,N,
+14,4,Nutrient,N,Y,19,23,19,62,,NA,NA,NA,NA,NA,
+15,4,Control,N,N,17,22,16,55,,NA,NA,NA,NA,NA,1 missing leg on crab
+16,4,Crab,Y,N,22,28,25,74,,6,1.1,1.2,N,N,
+17,5,Control,N,N,20,30,23,69,,NA,NA,NA,NA,NA,
+18,5,Crab,Y,N,12,20,12,46,,12,1.2,1.2,Y,N,
+19,5,Both,Y,Y,20,30,19,70,,17,1,1,Y,N,
+20,5,Nutrient,N,Y,14,22,15,48,,NA,NA,NA,NA,NA,
+21,6,Crab,Y,N,15,24,20,62,,15,1.1,1.2,N,Y,
+22,6,Control,N,N,14,25,19,68,,NA,NA,NA,NA,NA,Small male crab on this one
+23,6,Both,Y,Y,21,31,18,71,,19,1.2,0.8,Y,N,
+24,6,Nutrient,N,Y,13,24,15,59,,NA,NA,NA,NA,NA,
+25,7,Nutrient,N,Y,16,21,12,50,,NA,NA,NA,NA,NA,
+26,7,Control,N,N,12,20,16,52,,NA,NA,NA,NA,NA,
+27,7,Crab,Y,N,13,29,19,75,,4,0.9,0.9,N,N,
+28,7,Both,Y,Y,15,25,22,67,,20,1,1.2,Y,N,Small crabs
+29,8,Crab,Y,N,17,26,19,63,,2,0.8,0.9,N,N,
+30,8,Both,Y,Y,12,25,18,62,,18,1.2,1.2,Y,N,
+31,8,Nutrient,N,Y,16,22,22,63,,NA,NA,NA,NA,NA,
+32,8,Control,N,N,16,26,14,55,,NA,NA,NA,NA,NA,
+33,9,Crab,Y,N,16,32,21,75,,10,1.2,1.1,N,N,Missed photo on original survey
+34,9,Nutrient,N,Y,14,22,16,60,,NA,NA,NA,NA,NA,
+35,9,Control,N,N,14,31,16,64,,NA,NA,NA,NA,NA,
+36,9,Both,Y,Y,20,22,20,64,,5,1.2,1.1,N,N,Crab missing 2 legs
+37,10,Both,Y,Y,14,27,20,70,,8,1,1.1,N,N,
+38,10,Control,N,N,16,27,18,65,,NA,NA,NA,NA,NA,
+39,10,Nutrient,N,Y,14,24,17,62,,NA,NA,NA,NA,NA,
+40,10,Crab,Y,N,19,26,18,60,Pretty sure perpendicular length is 18 not 10,3,1.1,1.4,N,Y,

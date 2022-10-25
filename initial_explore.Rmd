@@ -3,10 +3,137 @@ title: "Initial explore"
 author: "Julianna Renzi"
 date: "10/17/2022"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+require(tidyverse)
+require(here)
+
+require(lme4)
 ```
 
 Initial explore
+
+
+# Bring in data
+
+```{r}
+alldat <- read_csv(here("data/cafi_data_sheet_with_dropdown.csv"))
+metadat <- read_csv(here("data/Coral_metadata.csv"))
+```
+
+How many unique taxa names did I use?
+
+```{r}
+alldat %>% 
+  select(search_term) %>% 
+  unique() %>% 
+  arrange(search_term) -> taxa
+
+dim(taxa)
+```
+
+
+# Explore
+
+## COMOs
+
+Start with the COMOs because they were of interest
+
+```{r}
+alldat %>% 
+  filter(search_term == "Coralliophila monodonta") %>% 
+  group_by(coral_id, cafi_size_mm) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() -> comos
+```
+
+Attach to metadata
+
+First clean a little 
+
+```{r}
+metadat %>% 
+  # decide to use 9_broken dimensions instead of unbroken
+  mutate(Coral_ID = case_when(Coral_ID == "9_broken" ~ "9", 
+                              TRUE ~ Coral_ID)) %>% 
+  filter(Coral_ID != "9_unbroken") %>% 
+  # make it a number
+  mutate(Coral_ID = as.numeric(Coral_ID)) %>% 
+  rename(coral_id = Coral_ID) -> metadat9
+```
+
+```{r}
+comos %>% 
+  left_join(metadat9, by = c("coral_id")) %>% 
+  # calculate volume
+  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> comos_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
+```
+
+Also get one for count
+
+```{r}
+comos_vol %>% 
+  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
+  summarize(Abundance = sum(Abundance)) -> comos_count
+```
+
+
+### Plot it
+
+```{r}
+comos_size %>% 
+  ggplot(aes(x = as.integer(cafi_size_mm), fill = Treatment)) +
+  geom_histogram(stat="count") +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+
+# versus..
+comos_count %>% 
+  ggplot(aes(x = Treatment, y = as.integer(Abundance), fill = Treatment)) +
+  geom_boxplot() +
+  theme_bw()
+
+
+
+```
+
+```{r}
+comos_count %>% 
+  ggplot(aes(x = Coral_vol), color = Treatment) +
+  geom_density() +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+```
+
+
+### Maybe stats?
+
+Is there a difference in the volume of corals between treatments?
+
+```{r}
+lm.size <- lm(Coral_vol ~ Treatment, data = comos_count)
+  summary(lm.size) # YAY!
+```
+
+Is there a difference in COMO abundance?
+
+```{r}
+m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol, data = comos_count)
+  summary(m.como)
+  
+# if we change it so 40 is not crab
+comos_count %>% 
+  mutate(Crab = case_when(coral_id == 40 ~ "N",
+                          TRUE ~ Crab)) -> tst
+
+m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol, data = tst)
+  summary(m.como)
+```
+
+
+
