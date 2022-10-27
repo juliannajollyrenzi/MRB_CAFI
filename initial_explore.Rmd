@@ -10,10 +10,18 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+# for multidimentional stuff
+require(vegan)
+require(RVAideMemoire)
+require(goeveg) # stress plot
+
+require(worms) # for taxonomic information using the World Registry of Marine Species
+
 require(tidyverse)
 require(here)
 
-require(lme4)
+
+
 ```
 
 Initial explore
@@ -36,6 +44,111 @@ alldat %>%
 
 dim(taxa)
 ```
+
+Can we attach the wormsID to these values?
+
+```{r}
+# alcl <- wormsbymatchnames("Arete indicus")
+
+#  taxa %>% 
+#    # do it just for the taxa that have search term level data
+#    filter(!is.na(search_term)) %>% 
+#    rowwise() %>% 
+#    mutate(Alphia_id = wormsbymatchnames(search_term)$AlphiaID) %>% 
+#    mutate(Family = wormsbymatchnames(search_term)$family) %>% 
+#    mutate(Status = wormsbymatchnames(search_term)$status) -> wormz
+#  # this is really slow so can save it as a CSV and read in as needed
+
+write_csv(wormz, here("data/worms.csv"))
+wormz <- read_csv(here("data/worms.csv"))
+```
+
+Then make groupings for those we want at above family level. General groups are: hermit, worm, limpet, bivalve, amphipod, Tanaidacea. Think about adding in brittles?
+
+```{r}
+alldat %>% 
+  select(-family) %>% # we want to make our own family
+  left_join(wormz, by = "search_term") %>% 
+  mutate(Taxa_group = case_when(type == "bivalve" ~ "Bivalve",
+                                type == "hermit" ~ "Hermit",
+                                type == "amphipod" ~ "Amphipod",
+                                type == "limpet" ~ "Limpet",
+                                type == "worm" ~ "Worm",
+                                search_term == "Tanaidacea" ~ "Peracarid",
+                                code == "HARA" ~ "Peracarid",
+                                code == "OPEL" ~ "Brittle",
+                                code == "BRDE" ~ "Brittle",
+                                code == "OPSC" ~ "Brittle",
+                                code == "OPER" ~ "Brittle",
+                                code == "BRPI" ~ "Brittle",
+                                code == "OPSE" ~ "Brittle",
+                                code == "AMSQ" ~ "Brittle",
+                                code == "MALO" ~ "Brittle",
+                                code == "OPSA" ~ "Brittle",
+                                code == "OPSP" ~ "Brittle",
+                                search_term == "Ophiocoma" ~ "Brittle",
+                                code == "OPPE" ~ "Brittle",
+                                TRUE ~ Family)) %>% 
+  # remove one unidentified snail (if the data change BE WARY OF THIS STEP)
+  filter(!is.na(Taxa_group)) -> cafi_grouped
+
+```
+
+## Change Sm/Med/Lg to numeric
+
+First look at distribution of data to get estimates for DAAR and DAFL size range
+
+```{r}
+
+cafi_grouped %>% 
+  filter(cafi_size_mm != "Med" &
+           cafi_size_mm != "XL" &
+           cafi_size_mm != "Lg" &
+           cafi_size_mm != "Sm") %>% 
+  mutate(cafi_size_mm = as.numeric(cafi_size_mm)) -> fish_dist
+```
+
+Plot it/summarize for DAAR
+
+```{r}
+fish_dist %>% 
+  filter(code == "DAAR") %>% 
+  ggplot(aes(x = cafi_size_mm)) +
+  geom_histogram()
+
+fish_dist %>% 
+  filter(code == "DAAR") %>% 
+  select(cafi_size_mm) %>% summary() 
+```
+
+And for DAFL
+
+```{r}
+fish_dist %>% 
+  filter(code == "DAFL") %>% 
+  ggplot(aes(x = cafi_size_mm)) +
+  geom_histogram()
+
+fish_dist %>% 
+  filter(code == "DAFL") %>% 
+  select(cafi_size_mm) %>% summary() 
+```
+
+Let's set third quartile as large, max as extra large, mean as medium
+
+```{r}
+cafi_grouped %>% 
+  mutate(cafi_size_mm = case_when(code == "DAFL" & cafi_size_mm == "Sm" ~ "18.50",
+                                  code == "DAFL" & cafi_size_mm == "Med" ~ "31.17",
+                                  code == "DAFL" & cafi_size_mm == "Lg" ~ "42.50",
+                                  code == "DAFL" & cafi_size_mm == "XL" ~ "65.00",
+                                  code == "DAAR" & cafi_size_mm == "Sm" ~ "7.00",
+                                  code == "DAAR" & cafi_size_mm == "Med" ~ "10.69",
+                                  TRUE ~ cafi_size_mm)) %>% 
+  mutate(cafi_size_mm = as.numeric(cafi_size_mm)) -> cafi
+```
+
+
 
 
 # Explore
@@ -64,7 +177,12 @@ metadat %>%
   filter(Coral_ID != "9_unbroken") %>% 
   # make it a number
   mutate(Coral_ID = as.numeric(Coral_ID)) %>% 
-  rename(coral_id = Coral_ID) -> metadat9
+  rename(coral_id = Coral_ID) %>% 
+  # change coral 40 here
+  mutate(Crab = case_when(coral_id == 40 ~ "N",
+                          TRUE ~ Crab)) %>% 
+  mutate(Treatment = case_when(coral_id == 40 ~ "Control",
+                          TRUE ~ Treatment)) -> metadat9
 ```
 
 ```{r}
@@ -77,7 +195,7 @@ comos %>%
 Also get one for count
 
 ```{r}
-comos_vol %>% 
+comos_size %>% 
   group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
   summarize(Abundance = sum(Abundance)) -> comos_count
 ```
@@ -123,7 +241,7 @@ lm.size <- lm(Coral_vol ~ Treatment, data = comos_count)
 Is there a difference in COMO abundance?
 
 ```{r}
-m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol, data = comos_count)
+m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = comos_count)
   summary(m.como)
   
 # if we change it so 40 is not crab
@@ -131,9 +249,714 @@ comos_count %>%
   mutate(Crab = case_when(coral_id == 40 ~ "N",
                           TRUE ~ Crab)) -> tst
 
-m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol, data = tst)
+m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = tst)
   summary(m.como)
 ```
 
+## DAFLs
 
+```{r}
+cafi %>% 
+  filter(search_term == "Dascyllus flavicaudus") %>% 
+  group_by(coral_id, cafi_size_mm) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() -> dafls
+```
+
+
+
+Attach to metadata
+
+```{r}
+dafls %>% 
+  left_join(metadat9, by = c("coral_id")) %>% 
+  # calculate volume
+  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> dafls_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
+```
+
+Also get one for count
+
+```{r}
+dafls_size %>% 
+  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
+  summarize(Abundance = sum(Abundance)) -> dafls_count
+```
+
+
+### Plot it
+
+```{r}
+dafls_size %>% 
+  ggplot(aes(x = as.integer(cafi_size_mm), fill = Treatment)) +
+  geom_histogram(stat="count") +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+
+# versus..
+dafls_count %>% 
+  ggplot(aes(x = Treatment, y = as.integer(Abundance), fill = Treatment)) +
+  geom_boxplot() +
+  theme_bw()
+
+
+
+```
+
+```{r}
+dafls_count %>% 
+  ggplot(aes(x = Coral_vol), color = Treatment) +
+  geom_density() +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+```
+
+### What about small DAFLs?
+
+```{r}
+hist(dafls_size$cafi_size_mm) # maybe like, under 3 cm?
+
+dafls_size %>% 
+  filter(cafi_size_mm <= 30) %>% 
+  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
+  summarize(Wittle_abundance = sum(Abundance)) -> bb_dafls
+```
+
+```{r}
+bb_dafls %>% 
+  ggplot(aes(x = Treatment, y = Wittle_abundance, fill = Treatment)) +
+  geom_boxplot() +
+  theme_bw()
+```
+
+
+
+### Maybe stats?
+
+Is there a difference in DAFL abundance?
+
+```{r}
+m.dafl <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = dafls_count)
+  summary(m.dafl)
+  
+# if we change it so 40 is not crab
+dafls_count %>% 
+  mutate(Crab = case_when(coral_id == 40 ~ "N",
+                          TRUE ~ Crab)) -> tst
+
+m.dafl <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = tst)
+  summary(m.dafl)
+
+```
+
+For lil guyz
+
+```{r}
+m.lil.dafl <- glm(Wittle_abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = bb_dafls)
+  summary(m.lil.dafl) # hmmm interesting--crabs and nutrients are good and seem to be additive. Not sure I understand why. Size didn't seem to matter so much?
+
+
+```
+
+# Alpheidae
+
+
+```{r}
+cafi %>% 
+  filter(Family == "Alpheidae") %>% 
+  group_by(coral_id, cafi_size_mm) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() -> alpheids
+```
+
+
+
+Attach to metadata
+
+```{r}
+alpheids %>% 
+  left_join(metadat9, by = c("coral_id")) %>% 
+  # calculate volume
+  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> alpheids_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
+```
+
+Also get one for count
+
+```{r}
+alpheids_size %>% 
+  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
+  summarize(Abundance = sum(Abundance)) -> alpheids_count
+```
+
+
+### Plot it
+
+```{r}
+alpheids_size %>% 
+  ggplot(aes(x = as.integer(cafi_size_mm), fill = Treatment)) +
+  geom_histogram(stat="count") +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+
+# versus..
+alpheids_count %>% 
+  ggplot(aes(x = Treatment, y = as.integer(Abundance), fill = Treatment)) +
+  geom_boxplot() +
+  theme_bw()
+
+
+
+```
+
+```{r}
+alpheids_count %>% 
+  ggplot(aes(x = Coral_vol), color = Treatment) +
+  geom_density() +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+```
+
+### Stats?
+
+Is there a difference in Alpheid abundance?
+
+```{r}
+m.alpheid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol, family = poisson, data =  alpheids_count)
+  summary(m.alpheid) # whuttt
+  
+# if we change it so 40 is not crab
+alpheids_count %>% 
+  mutate(Crab = case_when(coral_id == 40 ~ "N",
+                          TRUE ~ Crab)) -> tst
+
+m.alpheid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Crab:Nutrients, family = poisson, data = tst)
+  summary(m.alpheid) # hmmm 40 was really influential here
+
+```
+
+# Try multidimensional approach
+
+Making the NMDS: https://cougrstats.wordpress.com/2019/12/11/non-metric-multidimensional-scaling-nmds-in-r/
+
+Testing differences: https://www.introranger.org/post/ord-groups-gradients/
+
+Another options: https://jonlefcheck.net/2012/10/24/nmds-tutorial-in-r/comment-page-1/
+
+## Make a species matrix
+
+```{r}
+cafi %>% 
+  group_by(coral_id, Taxa_group) %>% 
+  # get abundance per taxa and coral
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = Taxa_group, values_from = Abundance) %>% 
+  # replace NA's with zeros
+  mutate_all(~replace(., is.na(.), 0)) -> spp_matrix_name
+
+spp_matrix_name %>% 
+  # get rid of ID column
+  select(-coral_id) -> spp_matrix_wide # no coral_ID
+```
+
+What to do with rare species?
+
+- "Addressing the removal of rare species in multivariate bioassessments: The impact of methodological choices" by Poos and Jackson (2012) suggests leaving in all rare spp
+- Comments on this blog (https://jonlefcheck.net/2012/10/24/nmds-tutorial-in-r/comment-page-1/) made me think it's probably at least removing families that only appear in one coral head
+
+```{r}
+# see how many columns have just one occurence
+
+#colSums(spp_matrix_wide != 0) > 1
+
+spp_mat_rare <- spp_matrix_wide[, colSums(spp_matrix_wide != 0) >= 2] # at least 2 occurrences (5% of samples)
+
+# spp_mat_rare <- spp_matrix_wide
+  
+```
+
+# Calculate distance
+
+```{r}
+nmds_bdd <- metaMDS(comm = spp_mat_rare, # community matrix
+                    k = 3, # chosen based on the scree plot
+                    distance = "bray", # bray-curtis distance
+                    try = 1500) # number of iterations
+                    
+```
+
+See everything we can pull out:
+
+```{r}
+names(nmds_bdd)
+
+nmds_bdd$ndim # number of axes created
+nmds_bdd$converged # did it converge?
+nmds_bdd$stress # what's the stress of the final solution
+nmds_bdd$distance # type of distance
+nmds_bdd$tries # number of random initial configuration tried
+nmds_bdd$points # scores for each sample (coral)
+nmds_bdd$species # scores for variables/species
+
+# and can plot simply:
+plot(nmds_bdd) # open black circles correspond to samples and red crosses indicate variables
+
+```
+
+
+# Plot NMDS
+
+```{r}
+# create a data frame of the scores from the individual sites.
+# This data frame will contain x and y values for where sites are located.
+data_scores <- as.data.frame(scores(nmds_bdd))
+```
+
+Now attached metadata
+
+```{r}
+data_scores <- cbind(data_scores, spp_matrix_name[,"coral_id"])
+
+# add other data 
+data_scores %>% 
+  left_join(metadat9, by = "coral_id") -> data_scores
+```
+
+Add the scores for species data
+
+```{r}
+species_scores <- as.data.frame(scores(nmds_bdd, "species"))
+```
+
+
+Add a column equivalent to the row name
+
+```{r}
+species_scores$species <- rownames(species_scores)
+```
+
+Build the plot
+
+```{r}
+ggplot() +
+  geom_point(data = data_scores, aes(x = NMDS1, y = NMDS2, 
+                                     color = Treatment), size = 3) +
+  annotate(geom = "label", x = -.1, y = .6, size = 10,
+           label = paste("Stress: ", round(nmds_bdd$stress, digits = 3))) +
+  theme_minimal() +
+  theme(legend.position = "right",
+        text = element_text(size = 24))
+```
+
+
+Or try this way: https://stats-uoa.github.io/BIOSCI220/multivariate-data-analysis.html
+
+```{r}
+# for corals
+sample_scores <- as.data.frame(nmds_bdd$points)
+
+# add metadata
+sample_scores <- cbind(sample_scores, metadat9)
+```
+
+And for species:
+
+```{r}
+spp_scores <- as.data.frame(nmds_bdd$species)
+spp_scores$Species <- rownames(spp_scores)
+```
+
+Then plot:
+
+```{r}
+ggplot() +
+  # the data points for each sample using the scores created in metaMDS function
+  geom_point(data = sample_scores, aes(x = MDS1, y = MDS2, 
+                                     color = Treatment), size = 3) +
+  # create more appropriate x and y axis labels 
+  xlab("nMDS1") +
+  ylab("nMDS2") +
+  # what colours would we like?
+  scale_color_manual(values = inferno(15)[c(3, 8, 16, 11)],
+                     name = "Treatment") +
+  # add stress label to the plot, indicating the label position
+  #annotate(geom = "label", x = -1.75, y = 2.75, size = 6,
+   #        label = paste("Stress: ", round(nmds_bdd$stress, digits = 3))) +
+  theme_minimal() + # choosing a theme
+  theme(legend.position = "right",
+        text = element_text(size = 10)) # position and size of legend
+```
+
+# Scree/stress plot
+
+```{r}
+dimcheckMDS(spp_mat_rare, distance = "bray", k=6) # k is max dimensions and default is 6
+```
+
+Also do a Shepard diagram
+
+```{r}
+stressplot(nmds_bdd)
+```
+
+# 3D plot
+
+```{r}
+require(vegan3d) # need to also download xQuartz
+```
+
+Use ordiplot3d
+
+```{r}
+# sample scores data
+data_scores_3d <-scores(nmds_bdd, display = "sites")
+
+# variable scores data
+species_scores_3d <-scores(nmds_bdd, display = "species")
+```
+
+
+```{r}
+#static 3-D variable scores plot
+out <- ordiplot3d(species_scores_3d, col = "red", ax.col= "black", pch = 18)
+text(out$xyz.convert(species_scores_3d), rownames(species_scores_3d), pos=1)
+```
+
+Try rotatable version
+
+```{r}
+#rotatable 3-D sample scores plot with sample points
+ordirgl(data_scores_3d, col = "red", type = "p", ax.col= "black", pch = 18)
+# to change points to sample labels use type = "t"
+
+#rotatable 3-D variable scores plot with variable labels
+ordirgl(species_scores_3d, col = metadat9$Treatment, type = "t", ax.col= "black", pch = 18)
+```
+
+
+Or try with plotly
+
+```{r}
+require(plotly)
+
+plot_ly(x = data_scores_3d[,1], 
+        y = data_scores_3d[,2], 
+        z = data_scores_3d[,3],
+        type = "scatter3d",
+        mode = "markers",
+        color = metadat9$Treatment) # can drag this around
+```
+
+# Try anosim
+
+```{r}
+bc_dist <- vegdist(spp_mat_rare, method="bray") 
+
+nut.ano <- anosim(bc_dist, metadat9$Nutrients)
+  summary(nut.ano)
+  plot(nut.ano) 
+  
+trt.ano <- anosim(bc_dist, metadat9$Treatment)
+  summary(trt.ano)
+  plot(trt.ano) 
+
+```
+
+## What about just with core CAFI?
+
+What are the most common CAFI?
+
+```{r}
+cafi %>% 
+  group_by(coral_id, Taxa_group) %>% 
+  # get abundance per taxa and coral
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() %>% 
+  left_join(metadat9, by = "coral_id") %>% 
+  ggplot(aes(x = Treatment, y = Abundance, fill = Taxa_group)) +
+  geom_bar(stat = "identity") 
+```
+
+
+```{r}
+cafi %>% 
+  group_by(Taxa_group) %>% 
+  # get abundance per taxa and coral
+  summarize(Abundance = sum(count)) %>% 
+  arrange(-Abundance) 
+
+
+# seems like a cutoff of 50 is a good place to start
+cafi %>% 
+  group_by(Taxa_group) %>% 
+  # get abundance per taxa and coral
+  summarize(Abundance = sum(count)) %>% 
+  arrange(-Abundance) %>% 
+  filter(Abundance >= 50) -> abundant_cafi
+```
+
+```{r}
+cafi %>% 
+  group_by(coral_id, Taxa_group) %>% 
+  # get abundance per taxa and coral
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = Taxa_group, values_from = Abundance) %>% 
+  # replace NA's with zeros
+  mutate_all(~replace(., is.na(.), 0)) %>% 
+  select(coral_id, abundant_cafi$Taxa_group) -> core_spp_matrix
+
+core_spp_matrix %>% 
+  # get rid of ID column
+  select(-coral_id) -> core_spp_matrix_wide # no coral_ID
+```
+
+
+## Calculate distance
+
+```{r}
+nmds_core <- metaMDS(comm = core_spp_matrix_wide, # community matrix
+                    k = 3, # chosen based on the scree plot
+                    distance = "bray", # bray-curtis distance
+                    try = 1500) # number of iterations
+                    
+```
+
+See everything we can pull out:
+
+```{r}
+names(nmds_core)
+
+nmds_core$ndim # number of axes created
+nmds_core$converged # did it converge?
+nmds_core$stress # what's the stress of the final solution
+nmds_core$distance # type of distance
+nmds_core$tries # number of random initial configuration tried
+nmds_core$points # scores for each sample (coral)
+nmds_core$species # scores for variables/species
+
+# and can plot simply:
+plot(nmds_core) # open black circles correspond to samples and red crosses indicate variables
+
+```
+
+
+# Plot NMDS
+
+```{r}
+# create a data frame of the scores from the individual sites.
+# This data frame will contain x and y values for where sites are located.
+data_scores <- as.data.frame(scores(nmds_core))
+```
+
+Now attached metadata
+
+```{r}
+data_scores <- cbind(data_scores, core_spp_matrix[,"coral_id"])
+
+# add other data 
+data_scores %>% 
+  left_join(metadat9, by = "coral_id") -> data_scores
+```
+
+Add the scores for species data
+
+```{r}
+species_scores <- as.data.frame(scores(nmds_core, "species"))
+```
+
+
+Add a column equivalent to the row name
+
+```{r}
+species_scores$species <- rownames(species_scores)
+```
+
+Build the plot
+
+```{r}
+ggplot() +
+  geom_point(data = data_scores, aes(x = NMDS1, y = NMDS2, 
+                                     color = Treatment), size = 3) +
+  annotate(geom = "label", x = -.1, y = .6, size = 10,
+           label = paste("Stress: ", round(nmds_core$stress, digits = 3))) +
+  theme_minimal() +
+  theme(legend.position = "right",
+        text = element_text(size = 24))
+```
+
+
+## Try anosim
+
+```{r}
+bc_dist <- vegdist(core_spp_matrix_wide, method="bray") 
+
+nut.ano <- anosim(bc_dist, metadat9$Nutrients)
+  summary(nut.ano)
+  plot(nut.ano) 
+  
+crab.ano <- anosim(bc_dist, metadat9$Crab)
+  summary(crab.ano)
+  plot(crab.ano) 
+    
+trt.ano <- anosim(bc_dist, metadat9$Treatment)
+  summary(trt.ano)
+  plot(trt.ano)  # Not a huge difference I don't think?
+
+```
+
+
+
+# Look at diversity metrics
+
+
+```{r}
+shann.in <- diversity(spp_mat_rare, index = "shannon")
+simp.in <- diversity(spp_mat_rare, index = "simpson")
+invSimp.in <- diversity(spp_mat_rare, index = "invsimpson")
+
+div.metrics <- cbind(shann.in, simp.in, invSimp.in, metadat9)
+```
+
+```{r}
+# shannon
+div.metrics %>% 
+  ggplot(aes(x = Treatment, y = shann.in, color = Treatment)) +
+  geom_boxplot() +
+  theme_minimal()
+
+# shannon-crab
+div.metrics %>% 
+  ggplot(aes(x = Crab, y = shann.in, color = Crab)) +
+  geom_boxplot() +
+  theme_minimal()
+
+# simpson
+div.metrics %>% 
+  ggplot(aes(x = Treatment, y = simp.in, color = Treatment)) +
+  geom_boxplot() +
+  theme_minimal()
+
+# inverse simpson
+div.metrics %>% 
+  ggplot(aes(x = Treatment, y = invSimp.in, color = Treatment)) +
+  geom_boxplot() +
+  theme_minimal()
+
+```
+
+Compare using the Hutcheson t-test ? https://www.dataanalytics.org.uk/comparing-diversity/
+https://www.rdocumentation.org/packages/ecolTest/versions/0.0.1/topics/multiple_Hutcheson_t_test 
+
+```{r}
+require(ecolTest)
+
+multiple_Hutcheson_t_test(t(spp_mat_rare)) # nope
+```
+
+What about like a Kruskal-Wallis test?
+
+```{r}
+kruskal.test(simp.in ~ Treatment, data = div.metrics)
+```
+
+Or just an ANOVA?
+
+```{r}
+div.aov <- aov(shann.in ~ Crab + Nutrients + Crab:Nutrients, data = div.metrics)
+  summary(div.aov)
+```
+
+
+# Gravid-ness?
+
+```{r}
+cafi %>% 
+  filter(Taxa_group == "Trapeziidae") %>% 
+  # fill in missing gravid lines
+  mutate(Gravid = case_when(is.na(Gravid) ~ "N",
+                            TRUE ~ Gravid)) -> trapeziids
+```
+
+
+```{r}
+trapeziids %>% 
+  group_by(coral_id, cafi_size_mm, Gravid) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() -> trapeziids.G
+
+trapeziids %>% 
+  group_by(coral_id, cafi_size_mm) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() -> trapeziids.noG
+```
+
+PLot
+
+```{r}
+trapeziids.G %>% 
+  left_join(metadat9, by = "coral_id") %>% 
+  ggplot(aes(x = Nutrients, y = Abundance, color = Gravid)) +
+  geom_violin() +
+  geom_jitter() +
+  theme_minimal()
+```
+
+
+
+
+Attach to metadata
+
+```{r}
+trapeziids.noG %>% 
+  left_join(metadat9, by = c("coral_id")) %>% 
+  # calculate volume
+  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> trapeziids_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
+```
+
+Also get one for count
+
+```{r}
+trapeziids_size %>% 
+  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
+  summarize(Abundance = sum(Abundance)) -> trapeziids_count
+```
+
+
+### Plot it
+
+```{r}
+trapeziids_size %>% 
+  ggplot(aes(x = as.integer(cafi_size_mm), fill = Treatment)) +
+  geom_histogram(stat="count") +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+
+# versus..
+trapeziids_count %>% 
+  ggplot(aes(x = Treatment, y = as.integer(Abundance), fill = Treatment)) +
+  geom_boxplot() +
+  theme_bw()
+
+
+
+```
+
+```{r}
+trapeziids_count %>% 
+  ggplot(aes(x = Coral_vol), color = Treatment) +
+  geom_density() +
+  facet_wrap(.~Treatment) +
+  theme_bw()
+```
+
+### Stats?
+
+Is there a difference in Trapeziid abundance?
+
+```{r}
+m.trapeziid <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data =  trapeziids_count)
+  summary(m.trapeziid) # hmmm yes more on the nutrient corals..
+  
+
+```
 
