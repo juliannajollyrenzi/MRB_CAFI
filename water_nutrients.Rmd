@@ -120,6 +120,68 @@ ggsave(filename = here("figures/Ammoniawater.jpg"), height = 3.5, width = 4.5)
 ```
 
 
+# Stats
+
+## Nitrite+Nitrate
+
+```{r}
+nnmod <- aov(NitriteNitrate ~ Nutrients + Time_point, data = nutrients)
+  summary(nnmod) # yes it elevated, seems no difference for time point?
+
+```
+
+Gotta check assumptions, but if not met do this:
+
+```{r}
+nnmodKW <- kruskal.test(NitriteNitrate ~ Nutrients, data = nutrients)
+  nnmodKW # still good for nutrients
+```
+
+Might be weird because time point should probably also be a thing?
+
+
+## Ammonia
+
+```{r}
+ammod <- aov(Ammonia ~ Nutrients + Time_point, data = nutrients)
+  summary(ammod) # Just time point..
+  
+# interaction tho?
+ammglm <- glm(Ammonia ~ Nutrients + Time_point + Nutrients:Time_point, family = gaussian, data = nutrients)
+  summary(ammglm) # no--really just time point
+  plot(ammglm)
+
+```
+
+Gotta check assumptions, but if not met do this:
+
+```{r}
+ammodKW <- kruskal.test(Ammonia ~ Nutrients, data = nutrients)
+  ammodKW # nothing here
+```
+
+
+## Phosphate
+
+```{r}
+phosmod <- aov(Phosphate ~ Nutrients + Time_point, data = nutrients)
+  summary(phosmod) # Just time point again
+  
+  
+# interaction tho?
+phosglm <- glm(Phosphate ~ Nutrients + Time_point + Nutrients:Time_point, family = gaussian, data = nutrients)
+  summary(phosglm)
+  plot(phosglm)
+
+```
+
+Gotta check assumptions, but if not met do this:
+
+```{r}
+ammodKW <- kruskal.test(Ammonia ~ Nutrients, data = nutrients)
+  ammodKW # nothing here
+```
+
 
 
 
