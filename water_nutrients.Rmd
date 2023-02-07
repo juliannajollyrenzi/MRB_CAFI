@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 require(here)
 require(tidyverse)
+require(RColorBrewer)
 ```
 
 This script plots the results from the water nutrient analysis
@@ -32,18 +33,92 @@ waterNut %>%
   # just want the samples (not the standards/etc.)
   filter(!is.na(Coral_ID)) %>% 
   mutate(Coral_ID = as.character(Coral_ID)) %>% 
-  left_join(metadat, by = "Coral_ID") -> nutrients
+  left_join(metadat, by = "Coral_ID") %>% 
+  mutate(Time_point = as.factor(Time_point)) -> nutrients
 ```
 
-# Plot nitrate and nitrite
+# Plot 
+
+## Nitrate and nitrite
 
 ```{r}
 nutrients %>% 
-  ggplot(aes( y = NitriteNitrate, group = Nutrients, fill = Nutrients)) +
-  geom_boxplot() +
-  facet_wrap(~Time_point) +
-  theme_classic()
+  ggplot(aes(x = Time_point, y = NitriteNitrate)) +
+  geom_boxplot(aes(color = Nutrients)) +
+  scale_color_manual(values = brewer.pal(n = 2, name = "Dark2")) +
+  #geom_point(aes(x = Time_point, y = NitriteNitrate, color = Nutrients)) +
+  theme_bw() +
+  xlab("Time point") +
+  ylab("Nitrite + Nitrate (umol)")
+
+ggsave(filename = here("figures/Nitratenitratewater.jpg"), height = 3.5, width = 4.5)
 ```
+
+## Nitrate
+
+```{r}
+nutrients %>% 
+  mutate(Nitrate = NitriteNitrate- Nitrite) %>% 
+  ggplot(aes(x = Time_point, y = Nitrate)) +
+  geom_boxplot(aes(color = Nutrients)) +
+  scale_color_manual(values = brewer.pal(n = 2, name = "Dark2")) +
+  #geom_point(aes(x = Time_point, y = NitriteNitrate, color = Nutrients)) +
+  theme_bw() +
+  xlab("Time point") +
+  ylab("Nitrate (umol)")
+
+ggsave(filename = here("figures/Nitratewater.jpg"), height = 3.5, width = 4.5)
+```
+ 
+Basically the same
+
+## Ammonia
+
+```{r}
+nutrients %>% 
+  ggplot(aes(x = Time_point, y = Ammonia)) +
+  geom_boxplot(aes(color = Nutrients)) +
+  scale_color_manual(values = brewer.pal(n = 2, name = "Dark2")) +
+  #geom_point(aes(x = Time_point, y = NitriteNitrate, color = Nutrients)) +
+  theme_bw() +
+  xlab("Time point") +
+  ylab("Ammonia (umol)")
+
+ggsave(filename = here("figures/Ammoniawater.jpg"), height = 3.5, width = 4.5)
+```
+
+
+## Phosphate
+
+```{r}
+nutrients %>% 
+  ggplot(aes(x = Time_point, y = Phosphate)) +
+  geom_boxplot(aes(color = Nutrients)) +
+  scale_color_manual(values = brewer.pal(n = 2, name = "Dark2")) +
+  #geom_point(aes(x = Time_point, color = Nutrients)) +
+  theme_bw() +
+  xlab("Time point") +
+  ylab("Phosphate (umol)")
+
+ggsave(filename = here("figures/Phosphatewater.jpg"), height = 3.5, width = 4.5)
+```
+
+
+## Ammonia
+
+```{r}
+nutrients %>% 
+  ggplot(aes(x = Time_point, y = Ammonia)) +
+  geom_boxplot(aes(color = Nutrients)) +
+  scale_color_manual(values = brewer.pal(n = 2, name = "Dark2")) +
+  geom_point(aes(x = Time_point, color = Nutrients)) +
+  theme_bw() +
+  xlab("Time point") +
+  ylab("Ammonia (umol)")
+
+ggsave(filename = here("figures/Ammoniawater.jpg"), height = 3.5, width = 4.5)
+```
+
 
 
 
