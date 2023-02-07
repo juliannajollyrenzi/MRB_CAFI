@@ -1,0 +1,51 @@
+---
+title: "Water nutrients"
+author: "Julianna Renzi"
+date: "2/7/2023"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+require(here)
+require(tidyverse)
+```
+
+This script plots the results from the water nutrient analysis
+
+# Bring in the data
+
+```{r}
+waterNut <- read_csv(here("data/Water_nutrients.csv"))
+
+metadat <- read_csv(here("data/Coral_metadata.csv")) %>% 
+  mutate(Coral_ID = case_when(Coral_ID == "9_broken" ~ "9", TRUE ~ Coral_ID))
+```
+
+Join the two together
+
+```{r}
+waterNut %>% 
+  # just want the samples (not the standards/etc.)
+  filter(!is.na(Coral_ID)) %>% 
+  mutate(Coral_ID = as.character(Coral_ID)) %>% 
+  left_join(metadat, by = "Coral_ID") -> nutrients
+```
+
+# Plot nitrate and nitrite
+
+```{r}
+nutrients %>% 
+  ggplot(aes( y = NitriteNitrate, group = Nutrients, fill = Nutrients)) +
+  geom_boxplot() +
+  facet_wrap(~Time_point) +
+  theme_classic()
+```
+
+
+
+
+
