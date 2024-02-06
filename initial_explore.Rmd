@@ -48,22 +48,41 @@ estimatedTL <- read_csv(here("data/TL_rough_analysis.csv"))
 If you want to run it without any of the questionable corals:
 
 ```{r}
-alldat %>% 
-   filter(coral_id != 40 & coral_id != 25 & coral_id != 19) -> alldat
+#alldat %>% 
+#   filter(coral_id != 40 & coral_id != 25 & coral_id != 19) -> alldat
+```
+
+
+
+# Make a color palette
+
+```{r}
+colorz <- cal_palette(name = "superbloom2", n = 5, type = "discrete")
+b.color <- colorz[1]
+control.color <- colorz[2]
+crab.color <- colorz[4]
+n.color <- colorz[5]
 ```
 
 # Get percent loss stats
 
 ```{r}
+# pdf(here("figures/Aug28TL.pdf"), height = 4, width = 5.5)
+
 estimatedTL %>% 
+  mutate(Treatment = factor(Treatment, levels = c("Crab", "Both", "Control", "Nutrient"))) %>% 
   ggplot() +
-  geom_boxplot(aes(x = factor(Treatment), y = Aug_28_estimate, fill = Treatment, color =Treatment)) +
+  geom_boxplot(aes(x = factor(Treatment), y = Aug_28_estimate, color =Treatment), fill = "lightgray") +
   theme_classic() + 
-  scale_fill_manual(values = brewer.pal(name = "Accent", n = 4)) +
+  scale_color_manual(values = c(crab.color, b.color, control.color, n.color)) +
   geom_point(aes(x = Treatment, y = Aug_28_estimate), alpha = 0.5) +
   xlab("Treatment") +
-  ylab("Percent tissue loss") +
-  theme(legend.position = "none")
+  ylab("Tissue loss (%)") +
+  theme(legend.position = "none",
+        text = element_text(size=20),
+      axis.text.x = element_text(angle=0))
+
+# dev.off()
 
 
 # and last time point:
@@ -112,22 +131,12 @@ gaus_tissue1 <- glm(Aug_28_estimate ~ Crab + Nutrients, data = estimatedTL)
   summary(gaus_tissue1) # nothing
   
 gaus_tissue2 <- glm(Percent_tissue_loss_July2023 ~  Crab + Nutrients, data = estimatedTL)
-  summary(gaus_tissue2) # close
+  summary(gaus_tissue2) # close, wonder what this would be like if I did percent cover in a better way?
   
 
 ```
 
 
-
-# Make a color palette
-
-```{r}
-colorz <- cal_palette(name = "superbloom2", n = 5, type = "discrete")
-b.color <- colorz[1]
-control.color <- colorz[2]
-crab.color <- colorz[4]
-n.color <- colorz[5]
-```
 
 
 How many unique taxa names did I use?
@@ -155,7 +164,7 @@ Can we attach the wormsID to these values?
 #    mutate(Status = wormsbymatchnames(search_term)$status) -> wormz
 #  # this is really slow so can save it as a CSV and read in as needed
 
-write_csv(wormz, here("data/worms.csv"))
+# write_csv(wormz, here("data/worms.csv"))
 wormz <- read_csv(here("data/worms.csv"))
 ```
 
@@ -249,6 +258,160 @@ cafi_grouped %>%
 
 # Explore
 
+
+## Metadata
+
+What about with points highlighted for remaining TRBI?
+
+We know from initial measurements that all CAFI were at least 8mm. To account for potential measurement error, let's do 7.5mm and above
+
+```{r}
+cafi %>% 
+  filter(search_term == "Trapezia bidentata") %>% 
+  filter(cafi_size_mm >= 7.5) %>% 
+  group_by(coral_id) %>% 
+  summarize(TRBI_abundance = sum(count)) %>% 
+  ungroup() -> lasting_TRBI
+```
+
+Join with metadata 
+
+```{r}
+metadat %>% 
+  # decide to use 9_broken dimensions instead of unbroken
+  mutate(Coral_ID = case_when(Coral_ID == "9_broken" ~ "9", 
+                              TRUE ~ Coral_ID)) %>% 
+  filter(Coral_ID != "9_unbroken") %>% 
+  # make it a number
+  mutate(Coral_ID = as.numeric(Coral_ID)) %>% 
+  rename(coral_id = Coral_ID) %>% 
+  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) %>% 
+  # add TRBI data
+  full_join(lasting_TRBI, by = "coral_id") %>% 
+  mutate(TRBI_abundance = replace_na(TRBI_abundance, 0)) -> metadatint
+```
+
+
+Summarize and join
+
+```{r}
+
+# and for abundance by taxa (but not size)
+cafi_grouped %>% 
+  group_by(coral_id, Taxa_group) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() %>% 
+  full_join(metadatint) %>% 
+  # get rid of NA goobs (ones we filtered out)
+  filter(!is.na(Abundance)) -> abundcafiTaxa
+```
+
+```{r}
+abundcafiTaxa %>% 
+  mutate(Treatment = factor(Treatment, levels = c("Control", "Both", "Crab", "Nutrient"))) %>% 
+  ggplot(aes(x = Treatment, y = Abundance, fill = Taxa_group)) +
+  geom_bar(stat = "identity") +
+  theme_bw()
+```
+
+Total abundance
+
+```{r}
+# for total abundance
+alldat %>% 
+  group_by(coral_id) %>% 
+  summarize(Abundance = sum(count)) %>% 
+  ungroup() %>% 
+  full_join(metadatint) %>% 
+  # get rid of NA goobs (ones we filtered out)
+  filter(!is.na(Abundance)) -> allcafi
+
+```
+
+```{r}
+# pdf(here("figures/totalabundance.pdf"), height = 4, width = 6.5)
+
+allcafi %>% 
+  mutate(Treatment = factor(Treatment, levels = c("Control", "Both", "Crab", "Nutrient"))) %>% 
+  ggplot(aes(x = Treatment, y = Abundance)) +
+  geom_boxplot() +
+  geom_point(aes(x = Treatment, y = Abundance, color = as.factor(TRBI_abundance)), data = allcafi) +
+  scale_color_manual(name = "Final crabs", values = c("lightgray", "orange", "red", "darkred")) +
+  theme_bw() +
+  theme(text = element_text(size=20),
+      axis.text.x = element_text(angle=0))
+
+# dev.off()
+```
+
+```{r}
+mAb <- glm(Abundance ~ Crab + Nutrients + Crab:Nutrients + Coral_vol, family = "poisson", data = allcafi)
+  summary(mAb) # significant but small?
+```
+
+
+
+
+
+## Recruitment shadow?
+
+Are there more CAFI in different blocks?
+
+
+
+You'd think Block 10 would have the most recruitment if it was a recruitment shadow?
+
+```{r}
+allcafi %>% 
+  ggplot(aes(x = Block, y = Abundance, group = Nutrients, color = Nutrients)) +
+  geom_point(aes(size = Coral_vol)) +
+  scale_color_manual(values = c(control.color, crab.color)) +
+  facet_wrap(~Crab) +
+  theme_bw()
+
+allcafi %>% 
+  ggplot(aes(x = Block, y = Abundance, group = Block)) +
+  geom_boxplot() +
+  theme_bw() # hard to tell without sizes
+
+```
+
+
+
+Stats?
+```{r}
+recruit.m1 <- glm(Abundance ~ Nutrients + Crab + Coral_vol + Block + Crab:Nutrients,
+                  data = allcafi, family = poisson)
+  summary(recruit.m1)
+```
+
+What do the predictions say about the model?
+
+```{r}
+new.data <- expand_grid(Nutrients = c("Y", "N"),
+                        Crab = c("Y", "N"),
+                        Coral_vol = mean(allcafi$Coral_vol),
+                        Block = c(1:10))
+
+
+
+preds <- predict(recruit.m1, newdata = new.data, type = "response")
+pred.df <- cbind(new.data, Pred = preds)
+
+# plot
+pred.df %>% 
+  ggplot(aes(x = Block, y = Pred, color = Crab)) +
+  ylab("Predicted CAFI abundance") +
+  scale_color_manual(values = c(control.color, crab.color)) +
+  facet_wrap(~Nutrients) +
+  geom_point() +
+  theme_classic()
+
+#ggsave(here("figures/predCAFIabundBlock.jpg"), width = 4.5, height = 3, dpi = 500)
+```
+
+
+
 ## COMOs
 
 Start with the COMOs because they were of interest
@@ -259,10 +422,10 @@ BUT this next code could only include corals that had at least one como--need to
 all_ids <- tibble("coral_id" = 1:40)
 
 # if you're running it without questionable ones:
-all_ids %>% 
-  filter(coral_id != 25 &
-           coral_id != 19 &
-           coral_id != 40) -> all_ids
+#all_ids %>% 
+#  filter(coral_id != 25 &
+#           coral_id != 19 &
+#           coral_id != 40) -> all_ids
 ```
 
 ```{r}
@@ -281,23 +444,10 @@ alldat %>%
 
 Attach to metadata
 
-First clean a little and add final TRBI data
+First clean a little and add metadata
 
 ```{r}
-metadat %>% 
-  # decide to use 9_broken dimensions instead of unbroken
-  mutate(Coral_ID = case_when(Coral_ID == "9_broken" ~ "9", 
-                              TRUE ~ Coral_ID)) %>% 
-  filter(Coral_ID != "9_unbroken") %>% 
-  # make it a number
-  mutate(Coral_ID = as.numeric(Coral_ID)) %>% 
-  rename(coral_id = Coral_ID) %>% 
-  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> metadatint
-  # change coral 40 here
-  #mutate(Crab = case_when(coral_id == 40 ~ "N",
-  #                        TRUE ~ Crab)) %>% 
-  #mutate(Treatment = case_when(coral_id == 40 ~ "Control",
-  #                        TRUE ~ Treatment)) 
+
 
 # order it
 
@@ -306,30 +456,12 @@ metadatint$Treatment <- factor(metadatint$Treatment, levels=c("Crab", "Both", "N
 
 What about with points highlighted for remaining TRBI?
 
-We know from initial measurements that all CAFI were at least 8mm. To account for potential measurement error, let's do 7.5mm and above
-
-```{r}
-cafi %>% 
-  filter(search_term == "Trapezia bidentata") %>% 
-  filter(cafi_size_mm >= 7.5) %>% 
-  left_join(metadatint, by = "coral_id") %>% 
-  group_by(coral_id) %>% 
-  summarize(TRBI_abundance = sum(count)) %>% 
-  ungroup() -> lasting_TRBI
-```
-
-```{r}
-metadatint %>% 
-  full_join(lasting_TRBI, by = "coral_id") %>% 
-  mutate(TRBI_abundance = replace_na(TRBI_abundance, 0)) -> metadat9
-  
-```
 
 ```{r}
 comos %>% 
-  left_join(metadat9, by = c("coral_id")) %>% 
-  # calculate volume
-  mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> comos_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
+  left_join(metadatint, by = c("coral_id")) -> comos_size
+  # calculate volume (I think this is done earlier)
+  #mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> comos_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
 ```
 
 Also get one for count
@@ -352,12 +484,28 @@ comos_size %>%
 
 # versus..
 comos_count %>% 
-  ggplot(aes(x = Treatment, y = as.integer(Abundance), fill = Treatment)) +
+  ggplot(aes(x = Treatment, y = as.integer(Abundance), color = Treatment)) +
   ylab("COMO abundance") +
-  scale_fill_manual(values = c(b.color, control.color, crab.color, n.color)) +
+  scale_color_manual(values = c(b.color, control.color, crab.color, n.color)) +
   geom_boxplot() +
   theme_classic()
 
+
+
+# pdf(here("figures/comoTRBIabundance.pdf"), height = 4, width = 6.5)
+
+comos_count %>% 
+  mutate(Treatment = factor(Treatment, levels = c("Both", "Crab", "Control", "Nutrient"))) %>% 
+  ggplot(aes(x = Treatment, y = as.integer(Abundance))) +
+  geom_boxplot() +
+  geom_point(aes(x = Treatment, y = Abundance, color = as.factor(TRBI_abundance)), data = comos_count) +
+  scale_color_manual(name = "Final crabs", values = c("lightgray", "orange", "red", "darkred")) +
+  theme_bw() +
+  ylab("COMO abundance") +
+  theme(text = element_text(size=20),
+      axis.text.x = element_text(angle=0))
+
+# dev.off()
 
 
 ```
@@ -380,10 +528,30 @@ lm.size <- lm(Coral_vol ~ Treatment, data = comos_count)
   summary(lm.size) # YAY!
 ```
 
+Can also plot this:
+
+```{r}
+# pdf(here("figures/coralvol_vs_abundance.pdf"), height = 4, width = 7.5)
+
+allcafi %>% 
+  ggplot(aes(x = Coral_vol, y = Abundance, color = Treatment)) +
+  geom_point() +
+  scale_color_manual(values = c(b.color, control.color, crab.color, n.color)) +
+  #geom_smooth(method = "lm", color = b.color) +
+  ylab("Total symbiont abundance") +
+  xlab("Coral volume (cm^3)") +
+  theme_bw() +
+  theme(text = element_text(size=20),
+      axis.text.x = element_text(angle=0))
+
+# dev.off()
+```
+
+
 Is there a difference in COMO abundance?
 
 ```{r}
-m.como <- glm(Abundance ~ Crab + Nutrients + Crab:Nutrients + Coral_vol, 
+m.como <- glm(Abundance ~ Crab + Nutrients + Crab:Nutrients + Block +  Coral_vol, 
               family = poisson, data = comos_count)
   summary(m.como)
   
@@ -392,28 +560,45 @@ comos_count %>%
   mutate(Crab = case_when(coral_id == 40 ~ "N",
                           TRUE ~ Crab)) -> tst
 
-m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Crab:Nutrients, family = poisson, data = tst)
+m.como <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Crab:Nutrients + Block, family = poisson, data = tst)
   summary(m.como)
 ```
 
 What do the predictions say about the model?
 
 ```{r}
-new.data <- comos_count[,c("Crab", "Nutrients")]
-new.data$Coral_vol <- mean(comos_count$Coral_vol)
+new.data <- expand.grid(Crab = c("Y", "N"),
+                        Nutrients = c("Y", "N"), 
+                        Coral_vol = mean(comos_count$Coral_vol), 
+                        Block = c(1:10))
+
 
 preds <- predict(m.como, newdata = new.data, type = "response")
 pred.df <- cbind(new.data, Pred = preds)
 
-# plot
+# block plot
 pred.df %>% 
-  ggplot(aes(x = Nutrients, y = Pred, color = Crab)) +
+  ggplot(aes(x = Block, y = Pred, color = Crab)) +
   ylab("Predicted COMO abundance") +
   scale_color_manual(values = c(control.color, crab.color)) +
   geom_point() +
+  facet_wrap(~Nutrients) +
   theme_classic()
 
-ggsave(here("figures/predCOMOabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# pdf(here("figures/predCOMO.pdf"), width = 7.5, height = 5.5)
+# plot
+pred.df %>% 
+  ggplot(aes(x = Nutrients, y = Pred, fill = Crab)) +
+  ylab("Predicted COMO abundance") +
+  scale_fill_manual(values = c(control.color, crab.color)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(text = element_text(size=20))
+
+# dev.off()
+
+
+# ggsave(here("figures/predCOMOabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 Could also re-plot this way:
@@ -426,7 +611,7 @@ comos_count %>%
   geom_boxplot() +
   theme_classic()
 
-ggsave(here("figures/COMOabund.jpg"), width = 4.5, height = 3, dpi = 500)
+#ggsave(here("figures/COMOabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 Or: 
@@ -442,7 +627,17 @@ comos_count %>%
 ### With TRBIs?
 
 ```{r}
-m.comoTRB <- glm(Abundance ~ TRBI_abundance + Coral_vol, 
+comos_count %>% 
+  ggplot(aes(x = TRBI_abundance, y = Abundance, group = TRBI_abundance, color = Nutrients)) +
+  geom_boxplot() +
+  geom_point() +
+  facet_wrap(~Crab) +
+  theme_bw()
+```
+
+
+```{r}
+m.comoTRB <- glm(Abundance ~ TRBI_abundance + Crab + Nutrients + Block + Coral_vol + TRBI_abundance:Crab + Nutrients:Crab + TRBI_abundance:Nutrients, 
               family = poisson, data = comos_count)
   summary(m.comoTRB)
   # don't know that it makes sense to include TRBI and nutrients in the same model because only like 1 data point for TRBI and nutrients
@@ -454,7 +649,9 @@ What do the predictions say about the model?
 ```{r}
 new.data <- expand_grid(Nutrients = c("Y", "N"),
                         Coral_vol = mean(comos_count$Coral_vol),
-                        TRBI_abundance = c(0, 1, 2, 3))
+                        Crab = c("Y", "N"),
+                        TRBI_abundance = seq(0, 3),
+                        Block = seq(1, 10))
   
 
 
@@ -467,25 +664,30 @@ pred.df %>%
   ylab("Predicted COMO abundance") +
   scale_color_manual(values = c(control.color, n.color)) +
   xlab("Original TRBI remaining") +
-  geom_point() +
   theme_classic()
 
-ggsave(here("figures/predCOMOabundTRBI.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/predCOMOabundTRBI.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
 Just plot abundances?
 
 ```{r}
+# pdf(here("figures/originalCrabCOMO.pdf"), height = 4, width = 7)
+
 comos_count %>% 
   ggplot(aes(x = as.factor(TRBI_abundance), y = Abundance)) +
   ylab("COMO abundance") +
   #scale_fill_manual(values = c(control.color, n.color)) +
    geom_boxplot() +
-  geom_point() +
-  xlab("Original TRBI remaining") +
-  theme_classic()
+  geom_point(aes(color = Treatment), data = comos_count) +
+  scale_color_manual(values = c(crab.color, b.color, n.color, control.color)) +
+  xlab("Number of original crabs") +
+  theme_classic() +
+  theme(text = element_text(size=20),
+      axis.text.x = element_text(angle=0))
 
+# dev.off()
 
 # ggsave(here("figures/COMOabundTRBI.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
@@ -519,7 +721,7 @@ Attach to metadata
 
 ```{r}
 dafls %>% 
-  left_join(metadat9, by = c("coral_id")) %>% 
+  left_join(metadatint, by = c("coral_id")) %>% 
   # calculate volume
   mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> dafls_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
 ```
@@ -570,7 +772,7 @@ dafls_size %>%
   full_join(all_ids, by = "coral_id") %>% 
   mutate(Abundance = case_when(is.na(Abundance) ~ 0,
                                TRUE ~ Abundance)) %>% 
-  left_join(metadat9, by = "coral_id") %>% 
+  left_join(metadatint, by = "coral_id") %>% 
   group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol, TRBI_abundance) %>% 
   summarize(Wittle_abundance = sum(Abundance)) -> bb_dafls
 ```
@@ -583,7 +785,7 @@ bb_dafls %>%
    geom_boxplot() +
    theme_classic()
 
-ggsave(here("figures/lilDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/lilDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
@@ -593,8 +795,8 @@ ggsave(here("figures/lilDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500)
 Is there a difference in DAFL abundance?
 
 ```{r}
-m.dafl <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = dafls_count)
-  summary(m.dafl)
+m.dafl <- glm(Abundance ~ Nutrients + Coral_vol + Block, family = poisson, data = dafls_count)
+  summary(m.dafl) 
   
 # if we change it so 40 is not crab
 dafls_count %>% 
@@ -609,11 +811,78 @@ m.dafl <- glm(Abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data =
 What do the predictions say about the model?
 
 ```{r}
-new.data <- dafls_count[,c("Crab", "Nutrients")]
-new.data$Coral_vol <- mean(dafls_count$Coral_vol)
+new.data <- expand.grid(Crab = c("Y", "N"),
+                        Nutrients = c("Y", "N"),
+                        Coral_vol = mean(dafls_count$Coral_vol),
+                        Block = c(1:10))
+
+
 
 preds <- predict(m.dafl, newdata = new.data, type = "response")
 pred.df <- cbind(new.data, Pred = preds)
+
+# plot block
+pred.df %>% 
+  ggplot(aes(x = Block, y = Pred, color = Crab)) +
+  ylab("Predicted DAFL abundance") +
+  scale_color_manual(values = c(control.color, crab.color)) +
+  geom_point() +
+  facet_wrap(~Nutrients) +
+  theme_classic()
+
+# plot
+pdf(here("figures/DAFL_modpred.pdf"), height = 5, width = 7)
+
+pred.df %>% 
+  ggplot(aes(x = Nutrients, y = Pred, fill = Nutrients)) +
+  ylab("Predicted DAFL abundance") +
+  scale_fill_manual(values = c(n.color, control.color)) +
+  geom_boxplot() +
+  theme_classic() +
+  theme(text = element_text(size=20))
+
+dev.off()
+
+ # ggsave(here("figures/predDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500)
+```
+
+
+For lil guyz
+
+```{r}
+m.lil.dafl <- glm(Wittle_abundance ~ Crab + Nutrients + Coral_vol + Block, family = poisson, data = bb_dafls)
+  summary(m.lil.dafl) # hmmm interesting--crabs and nutrients are good and seem to be additive. Not sure I understand why. Size didn't seem to matter so much?
+  
+# test  coral 40
+bb_dafls %>% 
+  mutate(Crab = case_when(coral_id == 40 ~ "N",
+                          TRUE ~ Crab)) -> tst
+
+m.lil.dafl <- glm(Wittle_abundance ~ Crab + Nutrients + Coral_vol + Block, family = poisson, data = tst)
+  summary(m.lil.dafl)
+```
+
+What do the predictions say about the model?
+
+```{r}
+new.data <- expand.grid(Crab = c("Y", "N"),
+                        Nutrients = c("Y", "N"),
+                        Coral_vol = mean(bb_dafls$Coral_vol),
+                        Block = c(1:10))
+
+
+
+preds <- predict(m.lil.dafl, newdata = new.data, type = "response")
+pred.df <- cbind(new.data, Pred = preds)
+
+# plot block
+pred.df %>% 
+  ggplot(aes(x = Block, y = Pred, color = Crab)) +
+  ylab("Predicted wittle DAFL abundance") +
+  scale_color_manual(values = c(control.color, crab.color)) +
+  geom_point() +
+  facet_wrap(~Nutrients) +
+  theme_classic()
 
 # plot
 pred.df %>% 
@@ -623,24 +892,9 @@ pred.df %>%
   geom_point() +
   theme_classic()
 
- ggsave(here("figures/predDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/predDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
-
-For lil guyz
-
-```{r}
-m.lil.dafl <- glm(Wittle_abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = bb_dafls)
-  summary(m.lil.dafl) # hmmm interesting--crabs and nutrients are good and seem to be additive. Not sure I understand why. Size didn't seem to matter so much?
-  
-# test  coral 40
-bb_dafls %>% 
-  mutate(Crab = case_when(coral_id == 40 ~ "N",
-                          TRUE ~ Crab)) -> tst
-
-m.lil.dafl <- glm(Wittle_abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = tst)
-  summary(m.lil.dafl)
-```
 
 Is the crab real?
 
@@ -654,7 +908,7 @@ bb_dafls %>%
   geom_point() +
   theme_classic()
  
-ggsave(here("figures/lilDAFLTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500) 
+# ggsave(here("figures/lilDAFLTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500) 
 ```
 
 
@@ -668,7 +922,7 @@ dafls_size %>%
   full_join(all_ids, by = "coral_id") %>% 
   mutate(Abundance = case_when(is.na(Abundance) ~ 0,
                                TRUE ~ Abundance)) %>% 
-  left_join(metadat9, by = "coral_id") %>% 
+  left_join(metadatint, by = "coral_id") %>% 
   group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
   summarize(Big_abundance = sum(Abundance)) -> big_dafls
 
@@ -683,12 +937,12 @@ big_dafls %>%
    geom_boxplot() +
    theme_classic()
 
-ggsave(here("figures/bigDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500) 
+# ggsave(here("figures/bigDAFLabund.jpg"), width = 4.5, height = 3, dpi = 500) 
 ```
 
 ```{r}
-m.big.dafl <- glm(Big_abundance ~ Crab + Nutrients + Coral_vol, family = poisson, data = big_dafls)
-  summary(m.big.dafl) # Hmmm interesting there actually is an effect of nutrients and volume
+m.big.dafl <- glm(Big_abundance ~ Crab + Nutrients + Coral_vol + Block, family = poisson, data = big_dafls)
+  summary(m.big.dafl) # Hmmm interesting there actually is an effect of nutrients and volume; also no effect of block which is interesting
   
 # test  coral 40
 big_dafls %>% 
@@ -738,7 +992,7 @@ cafi %>%
   full_join(all_ids, by = "coral_id") %>% 
   mutate(count1 = case_when(is.na(count) ~ 0,
                                TRUE ~ count))  %>%
-  left_join(metadat9, by = c("coral_id")) %>% 
+  left_join(metadatint, by = c("coral_id")) %>% 
   uncount(count1) -> dafl_uncount
   
 
@@ -754,9 +1008,21 @@ dafl_uncount %>%
 Stats?
 
 ```{r}
-m.daflsize <- glm(cafi_size_mm ~ Coral_vol + Nutrients + Coral_vol:Nutrients, data = dafl_uncount, family = gaussian)
+m.daflsize <- glm(cafi_size_mm ~ Crab + Coral_vol + Nutrients + Block, data = dafl_uncount, family = gaussian) # now there's a big effect of block, where bigger fish are closer to the crest? But no effect of nutrients 
   summary(m.daflsize)
 ```
+
+Block?
+
+```{r}
+dafl_uncount %>% 
+ # filter(cafi_size_mm>3) %>% 
+  ggplot(aes(x = Block, y = cafi_size_mm, color = Nutrients)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_classic()
+```
+
 
 
 
@@ -781,7 +1047,7 @@ alpheids %>%
   full_join(all_ids, by = "coral_id") %>% 
   mutate(Abundance = case_when(is.na(Abundance) ~ 0,
                                TRUE ~ Abundance)) %>% 
-  left_join(metadat9, by = c("coral_id")) %>% 
+  left_join(metadatint, by = c("coral_id")) %>% 
   # calculate volume
   mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> alpheids_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
 ```
@@ -830,7 +1096,7 @@ alpheids_count %>%
     geom_boxplot() +
     theme_classic()
 
-ggsave(here("figures/Alpheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/Alpheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
@@ -839,7 +1105,7 @@ ggsave(here("figures/Alpheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 Is there a difference in Alpheid abundance?
 
 ```{r}
-m.alpheid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol, family = poisson, data =  alpheids_count)
+m.alpheid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol + Block, family = poisson, data =  alpheids_count)
   summary(m.alpheid) # whuttt
   
 # if we change it so 40 is not crab
@@ -847,7 +1113,7 @@ alpheids_count %>%
   mutate(Crab = case_when(coral_id == 40 ~ "N",
                           TRUE ~ Crab)) -> tst
 
-m.alpheid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Crab:Nutrients, family = poisson, data = tst)
+m.alpheid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Block, family = poisson, data = tst)
   summary(m.alpheid) # hmmm 40 was really influential here
 
 ```
@@ -869,7 +1135,7 @@ pred.df %>%
   geom_point() +
   theme_classic()
 
- ggsave(here("figures/predAlpheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/predAlpheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 ## Palaemonidae
@@ -892,7 +1158,7 @@ palaemonids %>%
   full_join(all_ids, by = "coral_id") %>% 
   mutate(Abundance = case_when(is.na(Abundance) ~ 0,
                                TRUE ~ Abundance)) %>%
-  left_join(metadat9, by = c("coral_id")) %>% 
+  left_join(metadatint, by = c("coral_id")) %>% 
   # calculate volume
   mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> palaemonids_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
 ```
@@ -933,7 +1199,7 @@ palaemonids_count %>%
     geom_boxplot() +
     theme_classic()
 
- ggsave(here("figures/Palaemonidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/Palaemonidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 
 
 ```
@@ -944,16 +1210,16 @@ palaemonids_count %>%
 Is there a difference in Palaemonid abundance?
 
 ```{r}
-m.palaemonid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol, family = poisson, data =  palaemonids_count)
+m.palaemonid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Block + Coral_vol, family = poisson, data =  palaemonids_count)
   summary(m.palaemonid)  
-  
+   
 # if we change it so 40 is not crab
 palaemonids_count %>% 
   mutate(Crab = case_when(coral_id == 40 ~ "N",
                           TRUE ~ Crab)) -> tst
 
-m.palaemonid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Crab:Nutrients, family = poisson, data = tst)
-  summary(m.palaemonid) # hmmm 40 was really influential here
+m.palaemonid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Block + Crab:Nutrients, family = poisson, data = tst)
+  summary(m.palaemonid) # not a huge change
 
 ```
 
@@ -961,11 +1227,23 @@ m.palaemonid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Crab:Nutrients, f
 What do the predictions say?
 
 ```{r}
-new.data <- palaemonids_count[,c("Crab", "Nutrients")] 
-new.data <- cbind(new.data, Coral_vol = mean(palaemonids_count$Coral_vol))
+new.data <- expand.grid(Crab = c("Y", "N"),
+                        Nutrients = c("Y", "N"),
+                        Coral_vol = mean(palaemonids_count$Coral_vol),
+                        Block = c(1:10))
+
 
 preds <- predict(m.palaemonid, newdata = new.data, type = "response")
 pred.df <- cbind(new.data, Pred = preds)
+
+# block plot
+pred.df %>% 
+  ggplot(aes(x = Block, y = Pred, color = Crab)) +
+  ylab("Predicted Palaemonid abundance") +
+  scale_color_manual(values = c(control.color, crab.color)) +
+  geom_point() +
+  facet_wrap(~Nutrients) +
+  theme_classic()
 
 # plot
 pred.df %>% 
@@ -976,7 +1254,7 @@ pred.df %>%
   theme_classic()
 
 
- ggsave(here("figures/PredPalaemonidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/PredPalaemonidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
@@ -1035,10 +1313,16 @@ alphPalaeTRBI %>%
   geom_point() +
   facet_wrap(~Nutrients) +
   theme_bw()
+
+
+alphPalaeTRBI %>% 
+  ggplot(aes(x = TRBI_abundance, y = Palaemonid_abund, color = as.factor(TRBI_abundance))) +
+  geom_boxplot() +
+  theme_bw()
 ```
 
 ```{r}
-mtst <- glm(Palaemonid_abund ~  TRBI_abundance + Coral_vol, family = poisson, data = alphPalaeTRBI)
+mtst <- glm(Palaemonid_abund ~  TRBI_abundance + Coral_vol + Block, family = poisson, data = alphPalaeTRBI)
   summary(mtst)
 ```
 
@@ -1072,7 +1356,7 @@ pred.df %>%
 pred.df %>% group_by(TRBI_abundance) %>% summarize(meanPred = mean(Pred))
 
 
- ggsave(here("figures/PredPalaemonidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
+ # ggsave(here("figures/PredPalaemonidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 Plot actual differences?
@@ -1088,7 +1372,7 @@ alphPalaeTRBI %>%
   xlab("Original TRBI remaining") +
     theme_classic()
 
- ggsave(here("figures/PalaemonidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/PalaemonidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 ### Repeat for alpheid
@@ -1125,7 +1409,7 @@ pred.df %>%
   theme_classic()
 
 
- ggsave(here("figures/PredAlpheidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/PredAlpheidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 Plot actual differences?
@@ -1141,7 +1425,7 @@ alphPalaeTRBI %>%
   xlab("Original TRBI remaining") +
     theme_classic()
 
- ggsave(here("figures/AlpheidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/AlpheidTRBIabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 ## Galathea
@@ -1164,7 +1448,7 @@ galatheids %>%
   full_join(all_ids, by = "coral_id") %>% 
   mutate(Abundance = case_when(is.na(Abundance) ~ 0,
                                TRUE ~ Abundance)) %>%
-  left_join(metadat9, by = c("coral_id")) %>% 
+    left_join(metadatint, by = c("coral_id")) %>% 
   # calculate volume
   mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> galatheids_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
 ```
@@ -1188,7 +1472,7 @@ galatheids_size %>%
   theme_bw() +
   geom_vline(xintercept = 7.5) + 
   xlab("GAMA body length (mm)") +
-  ylab("Count")
+  ylab("Count") # bigger ones in nutrient?
 
 ggsave(here("figures/GAMAsize.jpg"), width = 4.5, height = 3, dpi = 500)
 
@@ -1210,7 +1494,7 @@ galatheids_count %>%
     geom_boxplot() +
     theme_classic()
 
- ggsave(here("figures/Galatheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/Galatheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 
 
 ```
@@ -1218,12 +1502,24 @@ galatheids_count %>%
 
 ### Stats?
 
-Is there a difference in Palaemonid abundance?
+Is there a difference in Galatheid abundance?
 
 ```{r}
-m.galatheid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol, family = poisson, data =  galatheids_count)
+m.galatheid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol + Block, family = poisson, data =  galatheids_count)
   summary(m.galatheid)  
   
+# if we change it so 40 is not crab
+galatheids_count %>% 
+  mutate(Crab = case_when(coral_id == 40 ~ "N",
+                          TRUE ~ Crab)) -> tst
+
+# or for 25
+galatheids_count %>% 
+  filter(coral_id != 25) -> tst
+
+m.galatheid <- glm(Abundance ~ Crab + Nutrients + Coral_vol + Block + Crab:Nutrients, family = poisson, data = tst)
+  summary(m.galatheid) # not a huge change
+
 
 
 ```
@@ -1232,8 +1528,10 @@ m.galatheid <- glm(Abundance ~ Crab + Nutrients + Nutrients:Crab + Coral_vol, fa
 What do the predictions say?
 
 ```{r}
-new.data <- galatheids_count[,c("Crab", "Nutrients")] 
-new.data <- cbind(new.data, Coral_vol = mean(galatheids_count$Coral_vol))
+new.data <- expand.grid(Crab = c("Y", "N"),
+                        Nutrients = c("Y", "N"),
+                        Coral_vol = mean(galatheids_count$Coral_vol),
+                        Block = c(1:10))
 
 preds <- predict(m.galatheid, newdata = new.data, type = "response")
 pred.df <- cbind(new.data, Pred = preds)
@@ -1243,11 +1541,11 @@ pred.df %>%
   ggplot(aes(x = Nutrients, y = Pred, color = Crab)) +
   ylab("Predicted Galatheid abundance") +
   scale_color_manual(values = c(control.color, crab.color)) +
-  geom_point() +
+  geom_boxplot() +
   theme_classic()
 
 
- ggsave(here("figures/PredGalatheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/PredGalatheidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
@@ -1293,6 +1591,32 @@ spp_mat_rare <- spp_matrix_wide[, colSums(spp_matrix_wide != 0) >= 2] # at least
   
 ```
 
+# Write community CSVs for Adrian's code
+
+```{r}
+# need to update above code so cafi object has all corals
+metadatint %>% 
+  select(coral_id, Block, Treatment, Crab, Nutrients, Circumference_cm, Coral_vol) %>% 
+  full_join(TRBI_endAbund) %>% 
+  mutate(TRBI_abundance = replace_na(TRBI_abundance, 0)) %>% 
+  full_join(spp_matrix_name) -> spp_mat_fam_all
+
+
+# write_csv(spp_mat_fam_all, here("generated_data/spp_mat_fam_all.csv"))
+
+# or do with just the more obvious corals
+spp_mat_fam_all %>% 
+  full_join(TRBI_endAbund) %>% 
+  mutate(TRBI_abundance = replace_na(TRBI_abundance, 0)) %>% 
+  filter(coral_id != 25 &
+           coral_id != 19 &
+           coral_id != 40) -> spp_mat_fam_noWeirdos
+
+# write_csv(spp_mat_fam_all, here("generated_data/spp_mat_fam_No251940.csv"))
+
+```
+
+
 # Calculate distance
 
 ```{r}
@@ -1303,6 +1627,9 @@ nmds_bdd <- metaMDS(comm = spp_mat_rare[-25,], # community matrix, but exclude t
                     try = 1500) # number of iterations
                     
 ```
+
+
+
 
 See everything we can pull out:
 
@@ -1793,7 +2120,7 @@ trapeziids %>%
 trapeziids.G %>% 
   left_join(trapeziids.all, by = "coral_id") %>% 
   mutate(Perc_graviid = Abundance/LgTrap_abundance) %>% 
-  left_join(metadat9, by = "coral_id") -> gravidTraps
+  left_join(metadatint, by = "coral_id") -> gravidTraps
 ```
 
 Plot
@@ -1857,7 +2184,7 @@ trapeziids %>%
     full_join(all_ids, by = "coral_id") %>% 
     mutate(Abundance = case_when(is.na(Abundance) ~ 0,
                                  TRUE ~ Abundance)) %>% 
-    left_join(metadat9, by = c("coral_id")) %>% 
+    left_join(metadatint, by = c("coral_id")) %>% 
     # calculate volume
     mutate(Coral_vol = 4/3*pi*(0.5*Height_cm)*(0.5*Longest_length_cm)*(0.5*Perpendicular_to_longest_length_cm)) -> trapeziids_size # McKeon et al. 2012 (Oecologia) calculated volume consumed as an ellipsoid (4/3𝜋𝑎𝑏𝑐, where a is half the length, b is half the width, and c is half the depth)
 ```
@@ -1866,8 +2193,12 @@ Also get one for count
 
 ```{r}
 trapeziids_size %>% 
-  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol) %>% 
+  group_by(coral_id, Block, Treatment, Crab, Nutrients, Coral_vol, TRBI_abundance) %>% 
   summarize(Abundance = sum(Abundance)) -> trapeziids_count
+
+# or with everything but original TRBI:
+trapeziids_count %>% 
+  mutate(Abundance = Abundance-TRBI_abundance) -> trapeziids_count
 ```
 
 
@@ -1888,7 +2219,7 @@ trapeziids_count %>%
   geom_boxplot() +
   theme_bw()
 
- ggsave(here("figures/Trapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/Trapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -1897,9 +2228,9 @@ trapeziids_count %>%
 Is there a difference in Trapeziid abundance?
 
 ```{r}
-m.trapeziid <- glm(Abundance ~ Crab + Nutrients +  Coral_vol, family = poisson, data
+m.trapeziid <- glm(Abundance ~ Crab + Nutrients +  Block + Coral_vol + Crab:Nutrients, family = poisson, data
                    =  trapeziids_count)
-  summary(m.trapeziid) # hmmm yes more on the nutrient corals..
+  summary(m.trapeziid) 
   
 
 ```
@@ -1907,8 +2238,10 @@ m.trapeziid <- glm(Abundance ~ Crab + Nutrients +  Coral_vol, family = poisson, 
 What do the predictions say?
 
 ```{r}
-new.data <- trapeziids_count[,c("Crab", "Nutrients")] 
-new.data <- cbind(new.data, Coral_vol = mean(trapeziids_count$Coral_vol))
+new.data <- new.data <- expand.grid(Crab = c("Y", "N"),
+                        Nutrients = c("Y", "N"),
+                        Coral_vol = mean(trapeziids_count$Coral_vol),
+                        Block = c(1:10))
 
 preds <- predict(m.trapeziid, newdata = new.data, type = "response")
 pred.df <- cbind(new.data, Pred = preds)
@@ -1918,7 +2251,7 @@ pred.df %>%
   ggplot(aes(x = Nutrients, y = Pred, color = Crab)) +
   ylab("Predicted Trapeziid abundance") +
   scale_color_manual(values = c(control.color, crab.color)) +
-  geom_point() +
+  geom_boxplot() +
   theme_classic()
 
 
@@ -1950,7 +2283,7 @@ trap_weight %>%
   xlab("Trapezia size (mm)") +
   ylab("Weight (g)")
 
-ggsave(here("figures/TrapeziidLengthMass.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/TrapeziidLengthMass.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 Looks like a curved line
@@ -2209,7 +2542,7 @@ trapeziids_biomass %>%
   geom_boxplot() +
   theme_classic()
 
-ggsave(here("figures/TrapeziidBiom.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/TrapeziidBiom.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -2223,7 +2556,7 @@ trapeziids_biomass %>%
   geom_boxplot() +
   theme_classic() 
 
-ggsave(here("figures/Trapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/Trapeziidabund.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -2253,7 +2586,7 @@ pred.df %>%
   theme_classic()
 
 
- ggsave(here("figures/PredTrapeziidbiom.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/PredTrapeziidbiom.jpg"), width = 4.5, height = 3, dpi = 500)
 ```
 
 
@@ -2282,7 +2615,7 @@ dafls_biomass %>%
   geom_boxplot() +
   theme_classic()
 
-ggsave(here("figures/DAFLBiom.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/DAFLBiom.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -2300,8 +2633,8 @@ dafls_biomass %>%
 ### Stats?
 
 ```{r}
-m.dafl.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol,
-                   data = dafls_biomass)
+m.dafl.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol + Block,
+                   data = dafls_biomass) # no effect on biomass--could this be because of changes in little and large abundances? Basically, 
   summary(m.dafl.biom)
 ```
 
@@ -2330,7 +2663,7 @@ comos_biomass %>%
   geom_boxplot() +
   theme_classic()
 
-ggsave(here("figures/COMOBiom.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/COMOBiom.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -2348,7 +2681,7 @@ comos_biomass %>%
 ### Stats?
 
 ```{r}
-m.como.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol,
+m.como.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol + Block,
                    data = comos_biomass)
   summary(m.como.biom) # still an effect of crab
 ```
@@ -2380,7 +2713,7 @@ alph_biomass %>%
   geom_boxplot() +
   theme_classic()
 
-ggsave(here("figures/AlpheidBiom.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/AlpheidBiom.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -2399,9 +2732,9 @@ alph_biomass %>%
 ### Stats?
 
 ```{r}
-m.alph.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol,
+m.alph.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol + Block,
                    data = alph_biomass)
-  summary(m.alph.biom) # still an effect of crab
+  summary(m.alph.biom) 
 ```
 
 
@@ -2430,7 +2763,7 @@ gamas_biomass %>%
   geom_boxplot() +
   theme_classic()
 
-ggsave(here("figures/GAMABiom.jpg"), width = 4.5, height = 3, dpi = 500)
+# ggsave(here("figures/GAMABiom.jpg"), width = 4.5, height = 3, dpi = 500)
 
 ```
 
@@ -2448,7 +2781,7 @@ gamas_biomass %>%
 ### Stats?
 
 ```{r}
-m.gama.biom <- glm(Biomass ~ Crab + Nutrients + Crab:Nutrients + Coral_vol,
+m.gama.biom <- glm(Biomass ~ Crab + Nutrients + Coral_vol + Block,
                    data = gamas_biomass)
   summary(m.gama.biom) # no effects
 ```
@@ -2491,13 +2824,18 @@ culcitaAggr %>%
 ## Look for consistency through time points
 
 ```{r}
+pdf(here("figures/cummAgScoreperCoral.pdf"), width = 6.5, height = 5)
+
 sumAggr %>% 
   ggplot(aes(x = Date, y = CummAg, group = coral_id, color = as.factor(coral_id))) +
   geom_line() +
   ylab("Cummulative aggression score") +
-  theme_classic()
+  theme_classic() +
+  theme(legend.position = "none", text = element_text(size=20)) +
+  scale_color_viridis_d()
 
-ggsave(here("figures/CummAggScore.jpg"), width = 7, height = 6, dpi = 500)
+dev.off()
+# ggsave(here("figures/CummAggScore.jpg"), width = 7, height = 6, dpi = 500)
 
 ```
 
@@ -2526,25 +2864,39 @@ comos_count %>%
 ```
 
 ```{r}
+# pdf(here("figures/commoabundMeanAggrNut.pdf"), width = 4.5, height = 4)
+
 comoAgg %>% 
   filter(Crab == "Y") %>% 
   #filter(coral_id != 25) %>% 
   ggplot(aes(x = MeanAggr, y = as.integer(Abundance), color = Nutrients)) +
   ylab("COMO abundance") +
+  xlab("Mean aggression score") +
   scale_color_manual(values = c(b.color, control.color, crab.color, n.color)) +
   geom_point() +
   theme_classic() #+
   facet_wrap(~Nutrients)
   
-ggsave(here("figures/AggScorevCOMO.jpg"), width = 7, height = 6, dpi = 500)
+# dev.off()
+  
+# ggsave(here("figures/AggScorevCOMO.jpg"), width = 7, height = 6, dpi = 500)
   
 ```
 
 Maybe stats?
 
 ```{r}
-m.comoAg <- glm(Abundance ~ Nutrients + MeanAggr + MeanAggr:Nutrients + Coral_vol, 
+
+m.comoAg <- glm(Abundance ~ MeanAggr + Coral_vol + Block + Nutrients + Nutrients:MeanAggr, 
               family = poisson, data = comoAgg) # Crab:CummAg can't be a thing because of singularities
+  summary(m.comoAg)
+  
+  
+comoAgg %>% 
+  filter(coral_id != 33) -> tst
+
+m.comoAg <- glm(Abundance ~ MeanAggr + Coral_vol + Block + Nutrients, 
+              family = poisson, data = tst) # Crab:CummAg can't be a thing because of singularities
   summary(m.comoAg)
 ```
 
@@ -2555,29 +2907,56 @@ pred <- expand.grid(MeanAggr = seq(from = min(comoAgg$MeanAggr),
                          to = max(comoAgg$MeanAggr),
                          length.out = length(comoAgg$MeanAggr)),
                     Nutrients = c("Y", "N"), 
-                    Coral_vol = mean(comoAgg$Coral_vol))
+                    Coral_vol = mean(comoAgg$Coral_vol),
+                    Block = c(1:10))
 
 
 
 
-pred$PredAbund <- predict(m.comoAg, 
-                 pred, 
-                 type = "response")
+predCI <- as.data.frame(predict(m.comoAg,
+                                pred, 
+                                type = "response",
+                                se.fit=TRUE)) # get standard error
+
+predCI %>% 
+  rename(PredAbund = fit,
+         SE = se.fit) %>% 
+  mutate(CI95 = 1.96*SE) -> predCI
+
+pred <- cbind(pred, predCI)
+  
 
 
 # plot
-pred %>% 
-  ggplot(aes(x = MeanAggr, y = PredAbund, color = Nutrients)) +
+# pdf(here("figures/commoabundMeanAggr.pdf"), width = 4.5, height = 4)
+
+pred %>%
+  filter(Block == 5) %>% 
+  ggplot(aes(x = MeanAggr, y = PredAbund)) +
   ylab("Predicted COMO abundance") +
+  xlab("Mean aggression score") +
   scale_color_manual(values = c(control.color, crab.color)) +
+  geom_ribbon(aes(ymax = PredAbund + CI95, ymin = PredAbund - CI95), alpha = 0.5, fill = control.color) +
+  geom_line(color = "black") +
+  #geom_point(aes(x = MeanAggr, y = as.integer(Abundance), color = Nutrients), data = comoAgg) +
+  theme_classic() 
+
+# dev.off()
+
+# for interaction:
+pred %>%
+  ggplot(aes(x = MeanAggr, y = PredAbund, color = Nutrients, group = Nutrients)) +
+  ylab("Predicted COMO abundance") +
+  xlab("Mean aggression score") +
   geom_point() +
   theme_classic() 
+
 ```
 
 I kinda think Coral 33 might be an outlier?
 
 ```{r}
-m.comoAg33 <- glm(Abundance ~ Nutrients + MeanAggr + Coral_vol, 
+m.comoAg33 <- glm(Abundance ~ Nutrients + MeanAggr + Coral_vol + Block, 
               family = poisson, data = subset(comoAgg, coral_id != 33)) # Crab:CummAg can't be a thing because of singularities
   summary(m.comoAg33)
   
@@ -2610,7 +2989,7 @@ pred %>%
   geom_point() +
   theme_classic() 
 
-ggsave(here("figures/AggScorevCOMOno33.jpg"), width = 7, height = 6, dpi = 500)
+# ggsave(here("figures/AggScorevCOMOno33.jpg"), width = 7, height = 6, dpi = 500)
 
 ```
 
@@ -2625,7 +3004,7 @@ culcita %>%
   rename(coral_id = Coral) %>% 
   # remove this crab column because it's confusing with the other crab column
   select(-Crab) %>% 
-  left_join(metadat9, by = "coral_id") %>% 
+  left_join(metadatint, by = "coral_id") %>% 
   group_by(coral_id, Crab, Nutrients, Treatment) %>% 
   summarize(TRBI_abundance = sum(TRBI)) -> july21
 ```
@@ -2685,9 +3064,9 @@ Or what if we look at the subset we think kept the TRBI?
 ```{r}
 comoAgg %>% 
   filter(Crab == "Y") %>% 
-  filter(TRBI_abundance > 0) -> comoAggTRBI
+  filter(TRBI_abundance > 0) -> comoAggTRBI # this is a dataset of 8!!! I don't think this is a good idea?
 
-m.comoAgTRB <- glm(Abundance ~ Nutrients + MeanAggr + Coral_vol, 
+m.comoAgTRB <- glm(Abundance ~ Nutrients + MeanAggr + Coral_vol + Block, 
               family = poisson, data = comoAggTRBI) # Crab:CummAg can't be a thing because of singularities
   summary(m.comoAgTRB)
 ```
@@ -2751,7 +3130,7 @@ daflAgg %>%
 Maybe stats?
 
 ```{r}
-m.daflAg <- glm(Abundance ~ Nutrients + Crab + MeanAggr + MeanAggr:Nutrients + Coral_vol, 
+m.daflAg <- glm(Abundance ~ Nutrients + Crab + MeanAggr + Coral_vol + Block, 
               family = poisson, data = daflAgg) # Crab:CummAg can't be a thing because of singularities
   summary(m.daflAg)
 ```
@@ -2762,7 +3141,7 @@ Maybe subset the data?
 daflAgg %>% 
   filter(Crab == "Y") -> daflAggCrab 
 
-m.daflAgCR <- glm(Abundance ~ Nutrients + MeanAggr + Nutrients:MeanAggr + Coral_vol, 
+m.daflAgCR <- glm(Abundance ~ Nutrients + MeanAggr + Coral_vol + Block, 
               family = poisson, data = daflAggCrab) # Crab:CummAg can't be a thing because of singularities
   summary(m.daflAgCR)
 ```
@@ -2773,7 +3152,7 @@ m.daflAgCR <- glm(Abundance ~ Nutrients + MeanAggr + Nutrients:MeanAggr + Coral_
 Get culcita data joined
 
 ```{r}
-metadat9 %>% 
+metadatint %>% 
   full_join(meanAggr, by = "coral_id") %>% 
   mutate(MeanAggr = case_when(is.na(MeanAggr) ~ 0,
                               TRUE ~ MeanAggr)) -> metaCul
@@ -2811,7 +3190,7 @@ We know from initial measurements that all CAFI were at least 8mm. To account fo
 cafi %>% 
   filter(search_term == "Trapezia bidentata") %>% 
   filter(cafi_size_mm >= 7.5) %>% 
-  left_join(metadat9, by = "coral_id") -> lg_TRBI
+  left_join(metadatint, by = "coral_id") -> lg_TRBI
 ```
 
 How many left?
@@ -2834,17 +3213,23 @@ lg_TRBI %>%
 On which corals?
 
 ```{r}
+ pdf(here("figures/trbiRemaining.pdf"), height = 4, width = 5.5)
+
 lg_TRBI %>% 
   group_by(Crab, Nutrients, Treatment) %>% 
   summarize(TRBI_abundance = sum(count)) %>% 
   ggplot(aes(x = Nutrients, y = TRBI_abundance, fill = Crab)) +
   scale_fill_manual(values = c(b.color, control.color, crab.color, n.color)) +
   ylab("Original TRBI remaining") +
-  geom_col() +
-  theme_classic()
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  ylim(0, 20) +
+  theme(text = element_text(size=20))
+
+ dev.off()
 
 
-ggsave(here("figures/TRBIleft.jpg"), width = 7, height = 6, dpi = 500)
+# ggsave(here("figures/TRBIleft.jpg"), width = 7, height = 6, dpi = 500)
 
 
 ```
@@ -2860,14 +3245,17 @@ culcita %>%
   rename(coral_id = Coral) %>% 
   # remove this crab column because it's confusing with the other crab column
   select(-Crab) %>% 
-  left_join(metadat9, by = "coral_id") %>% 
+  left_join(metadatint, by = "coral_id") %>% 
   group_by(Crab, Nutrients, Treatment) %>% 
   summarize(TRBI_abundance = sum(TRBI)) %>% 
   ggplot(aes(x = Nutrients, y = TRBI_abundance)) +
   scale_fill_manual(values = c(b.color, control.color, crab.color, n.color)) +
   ylab("Original TRBI remaining: 7/25/21") +
   geom_col() +
-  theme_classic()
+  ylim(0, 20) +
+  theme_classic() +
+  theme(text = element_text(size=20)) 
+
 
 ggsave(here("figures/TRBIleft72521.jpg"), width = 7, height = 6, dpi = 500)
 
